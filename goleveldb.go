@@ -6,22 +6,15 @@ import (
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/errors"
-	"github.com/syndtr/goleveldb/leveldb/filter"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
-const (
-	// minCache is the minimum amount of memory in megabytes to allocate to leveldb
-	// read and write caching, split half and half.
-	minCache = 16
-)
-
 func init() {
-	dbCreator := func(name string, dir string, opts ...*NewDatabaseOption) (DB, error) {
-		return NewGoLevelDB(name, dir, opts...)
+	dbCreator := func(name string, dir string) (DB, error) {
+		return NewGoLevelDB(name, dir)
 	}
-	registerDBCreator(GoLevelDBBackend, dbCreator, false)
+	registerDBCreator(GoLevelDBBackend, dbCreator)
 }
 
 type GoLevelDB struct {
@@ -30,39 +23,17 @@ type GoLevelDB struct {
 
 var _ DB = (*GoLevelDB)(nil)
 
-func NewGoLevelDB(name string, dir string, opts ...*NewDatabaseOption) (*GoLevelDB, error) {
-	externalOpt := &NewDatabaseOption{}
-	// TODO: use option pattern
-	if len(opts) > 0 {
-		externalOpt = opts[0]
-	}
-	cache := externalOpt.Cache / opt.MiB
-	if cache < minCache {
-		cache = minCache
-	}
-	handles := 200
-	if externalOpt.Handles > handles {
-		handles = externalOpt.Handles
-	}
-	filterSize := 10
-	if externalOpt.Filter > filterSize {
-		filterSize = externalOpt.Filter
-	}
-
-	return NewGoLevelDBWithOpts(name, dir, &opt.Options{
-		OpenFilesCacheCapacity: handles,
-		BlockCacheCapacity:     cache / 2 * opt.MiB,
-		WriteBuffer:            cache / 4 * opt.MiB, // Two of these are used internally
-		Filter:                 filter.NewBloomFilter(filterSize),
-	})
+func NewGoLevelDB(name string, dir string) (*GoLevelDB, error) {
+	return NewGoLevelDBWithOpts(name, dir, nil)
 }
 
 func NewGoLevelDBWithOpts(name string, dir string, o *opt.Options) (*GoLevelDB, error) {
-	dbPath := filepath.Join(dir, name+".db")
+	dbPath := filepath.Join(dir, name+".db") //nolint:goconst
 	db, err := leveldb.OpenFile(dbPath, o)
 	if err != nil {
 		return nil, err
 	}
+
 	database := &GoLevelDB{
 		db: db,
 	}
@@ -101,7 +72,8 @@ func (db *GoLevelDB) Set(key []byte, value []byte) error {
 	if value == nil {
 		return errValueNil
 	}
-	if err := db.db.Put(key, value, nil); err != nil {
+	err := db.db.Put(key, value, nil)
+	if err != nil {
 		return err
 	}
 	return nil
@@ -115,7 +87,9 @@ func (db *GoLevelDB) SetSync(key []byte, value []byte) error {
 	if value == nil {
 		return errValueNil
 	}
-	if err := db.db.Put(key, value, &opt.WriteOptions{Sync: true}); err != nil {
+
+	err := db.db.Put(key, value, &opt.WriteOptions{Sync: true})
+	if err != nil {
 		return err
 	}
 	return nil
@@ -126,7 +100,9 @@ func (db *GoLevelDB) Delete(key []byte) error {
 	if len(key) == 0 {
 		return errKeyEmpty
 	}
-	if err := db.db.Delete(key, nil); err != nil {
+
+	err := db.db.Delete(key, nil)
+	if err != nil {
 		return err
 	}
 	return nil
@@ -217,4 +193,9 @@ func (db *GoLevelDB) ReverseIterator(start, end []byte) (Iterator, error) {
 	}
 	itr := db.db.NewIterator(&util.Range{Start: start, Limit: end}, nil)
 	return newGoLevelDBIterator(itr, start, end, true), nil
+}
+
+// Compact range
+func (db *GoLevelDB) Compact(start, end []byte) error {
+	return db.db.CompactRange(util.Range{Start: start, Limit: end})
 }

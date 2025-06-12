@@ -35,22 +35,27 @@ const (
 	RocksDBBackend BackendType = "rocksdb"
 
 	BadgerDBBackend BackendType = "badgerdb"
+
+	// PebbleDBDBBackend represents pebble (uses github.com/cockroachdb/pebble)
+	//   - EXPERIMENTAL
+	//   - use pebbledb build tag (go build -tags pebbledb)
+	PebbleDBBackend BackendType = "pebbledb"
 )
 
-type dbCreator func(name string, dir string, opts ...*NewDatabaseOption) (DB, error)
+type dbCreator func(name string, dir string) (DB, error)
 
 var backends = map[BackendType]dbCreator{}
 
-func registerDBCreator(backend BackendType, creator dbCreator, force bool) {
+func registerDBCreator(backend BackendType, creator dbCreator) {
 	_, ok := backends[backend]
-	if !force && ok {
+	if ok {
 		return
 	}
 	backends[backend] = creator
 }
 
 // NewDB creates a new database of type backend with the given name.
-func NewDB(name string, backend BackendType, dir string, opts ...*NewDatabaseOption) (DB, error) {
+func NewDB(name string, backend BackendType, dir string) (DB, error) {
 	dbCreator, ok := backends[backend]
 	if !ok {
 		keys := make([]string, 0, len(backends))
@@ -61,7 +66,7 @@ func NewDB(name string, backend BackendType, dir string, opts ...*NewDatabaseOpt
 			backend, strings.Join(keys, ","))
 	}
 
-	db, err := dbCreator(name, dir, opts...)
+	db, err := dbCreator(name, dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize database: %w", err)
 	}
